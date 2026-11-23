@@ -1111,6 +1111,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                             childDevice["device_id"],
                             None,
                             hass,
+                            # the hub keeps one session per user: share the hub's login
+                            # when it uses the same credentials as the child
+                            (
+                                tapoController.transport
+                                if cloud_password != ""
+                                else None
+                            ),
                         )
                         LOGGER.debug("Child controller set up.")
                         hass.data[DOMAIN][entry.entry_id]["allControllers"].append(

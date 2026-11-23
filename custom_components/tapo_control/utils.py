@@ -178,6 +178,7 @@ def registerController(
     device_id=None,
     is_klap=None,
     hass=None,
+    transport=None,
 ):
     selected_transport_method = (
         hass.data.get(DOMAIN_CONFIG, {}).get(CONF_TRANSPORT_METHOD)
@@ -203,6 +204,7 @@ def registerController(
         isKLAP=is_klap,
         hass=hass,
         transportMethod=selected_transport_method,
+        transport=transport,
     )
 
 
