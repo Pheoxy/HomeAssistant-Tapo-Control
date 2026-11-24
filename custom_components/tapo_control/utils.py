@@ -174,6 +174,7 @@ def registerController(
     device_id=None,
     is_klap=None,
     hass=None,
+    transport=None,
 ):
     selected_transport_method = (
         hass.data.get(DOMAIN_CONFIG, {}).get(CONF_TRANSPORT_METHOD)
@@ -199,6 +200,7 @@ def registerController(
         isKLAP=is_klap,
         hass=hass,
         transportMethod=selected_transport_method,
+        transport=transport,
     )
 
 
@@ -788,6 +790,7 @@ async def findMedia(hass, entryData, entry, recordingsList=None):
 
         await mediaCleanup(hass, entry, entryData)
     except Exception as err:
+        entryData["mediaScanFailures"] = entryData.get("mediaScanFailures", 0) + 1
         LOGGER.warning(
             "Media scan failed for %s; will retry at the media polling interval: %s",
             entryData["name"],
@@ -3135,6 +3138,9 @@ async def scanMedia(hass, device, entry):
         except Exception as err:
             device["initialMediaScanRunning"] = False
             device["mediaSyncAvailable"] = False
+            # back off like an incomplete scan, so a device without recordings
+            # (such as a hub itself) is not asked again every minute
+            device["mediaScanFailures"] = device.get("mediaScanFailures", 0) + 1
             enableMediaSync = device[ENABLE_MEDIA_SYNC]
             errMsg = "Unable to retrieve recordings list, will retry at the media polling interval. Do you have an SD card inserted, and is the camera reachable?"
             if enableMediaSync:
