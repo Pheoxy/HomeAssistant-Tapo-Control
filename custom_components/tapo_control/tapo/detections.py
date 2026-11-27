@@ -7,12 +7,15 @@ detection is seen after it happened, not while it happens.
 No Home Assistant imports, so this can be tested and reused on its own.
 """
 
-# alarm_type values seen on an H200 with a D230 doorbell
+# alarm_type values seen on an H200 with a D230 doorbell (2, 6, 10, 16);
+# the Tapo app also treats 17 and 18 as a ring
 DETECTION_TYPES = {
     2: "motion",
     6: "person",
     10: "ring",
     16: "package",
+    17: "ring",
+    18: "ring",
 }
 
 # look back far enough to cover a long recording plus a missed poll
