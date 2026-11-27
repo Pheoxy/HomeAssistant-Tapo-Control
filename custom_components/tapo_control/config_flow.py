@@ -82,6 +82,8 @@ from .const import (
     UPDATE_INTERVAL_BATTERY_DEFAULT,
     UPDATE_INTERVAL_MAIN,
     UPDATE_INTERVAL_BATTERY,
+    HUB_DETECTION_INTERVAL,
+    HUB_DETECTION_INTERVAL_DEFAULT,
     UPDATE_INTERVAL_MAIN_DEFAULT,
 )
 
@@ -1408,6 +1410,14 @@ class TapoOptionsFlowHandler(OptionsFlow):
         errors = {}
         updateIntervalMain = self.config_entry.data[UPDATE_INTERVAL_MAIN]
         updateIntervalBattery = self.config_entry.data[UPDATE_INTERVAL_BATTERY]
+        hubDetectionInterval = self.config_entry.data.get(
+            HUB_DETECTION_INTERVAL, HUB_DETECTION_INTERVAL_DEFAULT
+        )
+        isHub = bool(
+            self.hass.data.get(DOMAIN, {})
+            .get(self.config_entry.entry_id, {})
+            .get("isParent")
+        )
 
         allConfigData = {**self.config_entry.data}
         if user_input is not None:
@@ -1424,6 +1434,10 @@ class TapoOptionsFlowHandler(OptionsFlow):
 
                 allConfigData[UPDATE_INTERVAL_MAIN] = updateIntervalMain
                 allConfigData[UPDATE_INTERVAL_BATTERY] = updateIntervalBattery
+                if HUB_DETECTION_INTERVAL in user_input:
+                    allConfigData[HUB_DETECTION_INTERVAL] = user_input[
+                        HUB_DETECTION_INTERVAL
+                    ]
                 self.hass.config_entries.async_update_entry(
                     self.config_entry,
                     data=allConfigData,
@@ -1434,20 +1448,26 @@ class TapoOptionsFlowHandler(OptionsFlow):
                 errors["base"] = "unknown"
                 LOGGER.error(e)
 
+        schema = {
+            vol.Required(
+                UPDATE_INTERVAL_MAIN,
+                description={"suggested_value": updateIntervalMain},
+            ): int,
+            vol.Required(
+                UPDATE_INTERVAL_BATTERY,
+                description={"suggested_value": updateIntervalBattery},
+            ): int,
+        }
+        if isHub:
+            schema[
+                vol.Required(
+                    HUB_DETECTION_INTERVAL,
+                    description={"suggested_value": hubDetectionInterval},
+                )
+            ] = vol.All(int, vol.Range(min=0))
         return self.async_show_form(
             step_id="update_interval",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        UPDATE_INTERVAL_MAIN,
-                        description={"suggested_value": updateIntervalMain},
-                    ): int,
-                    vol.Required(
-                        UPDATE_INTERVAL_BATTERY,
-                        description={"suggested_value": updateIntervalBattery},
-                    ): int,
-                }
-            ),
+            data_schema=vol.Schema(schema),
             errors=errors,
         )
 

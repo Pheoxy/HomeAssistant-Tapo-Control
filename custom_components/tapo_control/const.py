@@ -14,6 +14,11 @@ DOMAIN = "tapo_control"
 DOMAIN_CONFIG = DOMAIN + "_config"
 BRAND = "TP-Link"
 DOORBELL_UDP_PORT = 20005
+# how often to read a hub's detection list for its cameras, in seconds (0 = off)
+HUB_DETECTION_INTERVAL = "hub_detection_interval"
+HUB_DETECTION_INTERVAL_DEFAULT = 30
+# how long a hub detection sensor stays on after a detection is seen
+HUB_DETECTION_HOLD_SECONDS = 60
 DOORBELL_UDP_DISCOVERED = "doorbell_udp_discovered"
 ALARM_MODE = "alarm_mode"
 PRESET = "preset"

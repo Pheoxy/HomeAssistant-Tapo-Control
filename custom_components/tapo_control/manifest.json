@@ -6,7 +6,7 @@
   "codeowners": [
     "@JurajNyiri"
   ],
-  "version": "7.3.12+pheoxy.h200.1",
+  "version": "7.3.12+pheoxy.h200.2",
   "requirements": [
     "pytapo @ https://github.com/Pheoxy/pytapo/archive/833a8c48adea7b3bf0444072f854316f7fda00bf.zip",
     "python-kasa[speedups]>=0.10.2"
