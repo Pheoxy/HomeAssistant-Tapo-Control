@@ -1,4 +1,6 @@
 import asyncio
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from homeassistant.core import HomeAssistant, callback
@@ -23,6 +25,7 @@ from homeassistant.const import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.util.enum import try_parse_enum
 from .const import (
     BRAND,
@@ -31,12 +34,20 @@ from .const import (
     ENABLE_SOUND_DETECTION,
     DOORBELL_UDP_DISCOVERED,
     DOORBELL_UDP_PORT,
+    HUB_DETECTION_INTERVAL,
+    HUB_DETECTION_INTERVAL_DEFAULT,
+    HUB_DETECTION_HOLD_SECONDS,
     SOUND_DETECTION_PEAK,
     SOUND_DETECTION_DURATION,
     SOUND_DETECTION_RESET,
 )
 from .utils import build_device_info, getStreamSource
 from .tapo.entities import TapoBinarySensorEntity
+from .tapo.detections import (
+    DetectionTracker,
+    detection_list,
+    detection_list_request,
+)
 
 import haffmpeg.sensor as ffmpeg_sensor
 
@@ -227,6 +238,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     if binarySensors:
         async_add_entities(binarySensors)
 
+    await setupHubDetections(hass, config_entry, entry, async_add_entities)
+
     if (is_doorbell_model or has_doorbell_child) and not is_child_device:
         precreate_udp_sensor = bool(config_entry.data.get(DOORBELL_UDP_DISCOVERED))
 
@@ -249,6 +262,160 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         )
 
     return True
+
+
+HUB_DETECTION_SENSORS = {
+    "motion": ("Motion detected", "mdi:motion-sensor"),
+    "person": ("Person detected", "mdi:account"),
+    "package": ("Package detected", "mdi:package-variant-closed"),
+}
+
+
+async def setupHubDetections(hass, config_entry, entry, async_add_entities):
+    """Sensors for the cameras connected to a hub, from the hub's detection list.
+
+    The hub lists a detection when its recording ends, so these turn on after
+    the detection happened (typically 10-30 s after the recording ends).
+    Reading the list goes to the hub only and does not wake a battery camera.
+    """
+    interval = config_entry.data.get(
+        HUB_DETECTION_INTERVAL, HUB_DETECTION_INTERVAL_DEFAULT
+    )
+    if not entry.get("isParent") or not interval:
+        return
+    pollers = []
+    for child in entry["childDevices"]:
+        if not child.get("camData"):
+            continue
+        sensors = {
+            detection_type: TapoHubDetectionSensor(
+                child, hass, config_entry, name, icon
+            )
+            for detection_type, (name, icon) in HUB_DETECTION_SENSORS.items()
+        }
+        async_add_entities(sensors.values())
+        pollers.append(HubDetectionPoller(hass, child, sensors))
+    if not pollers:
+        return
+    entry["hubDetectionPollers"] = pollers
+
+    async def poll_all(_now=None):
+        for poller in pollers:
+            await poller.async_poll()
+
+    # the first read (which only records what is already listed) is one
+    # interval after setup, when the sensors have been added
+    config_entry.async_on_unload(
+        async_track_time_interval(hass, poll_all, timedelta(seconds=interval))
+    )
+
+
+class HubDetectionPoller:
+    """Reads one hub camera's detection list and turns its sensors on."""
+
+    def __init__(self, hass, child, sensors):
+        self._hass = hass
+        self._child = child
+        self._sensors = sensors
+        self._tracker = DetectionTracker()
+        self._running = False
+        self._failing = False
+
+    async def async_poll(self):
+        if self._running:
+            # the previous read is still waiting for the hub
+            return
+        if not any(sensor._enabled for sensor in self._sensors.values()):
+            return
+        self._running = True
+        try:
+            # the controller can be replaced after a reconnect, so read it each time
+            controller = self._child["controller"]
+            response = await self._hass.async_add_executor_job(
+                controller.executeFunction,
+                "searchDetectionList",
+                detection_list_request(int(time.time())),
+            )
+            detections = detection_list(response)
+        except Exception as err:
+            # keep the sensors as they are; the next read tries again
+            if not self._failing:
+                LOGGER.warning(
+                    "Reading hub detections for %s failed: %s",
+                    self._child["name"],
+                    err,
+                )
+            self._failing = True
+            return
+        finally:
+            self._running = False
+        if self._failing:
+            LOGGER.info("Reading hub detections for %s works again", self._child["name"])
+            self._failing = False
+        for detection in self._tracker.new_detections(detections):
+            LOGGER.debug("Hub detection for %s: %s", self._child["name"], detection)
+            sensor = self._sensors.get(detection["type"])
+            if sensor is not None:
+                sensor.detected(detection)
+
+
+class TapoHubDetectionSensor(TapoBinarySensorEntity):
+    """On for a short time after the hub lists a new detection of this type."""
+
+    _attr_should_poll = False
+
+    def __init__(self, entry: dict, hass: HomeAssistant, config_entry, name, icon):
+        self._attr_state = STATE_OFF
+        self._attr_extra_state_attributes = {}
+        self._cancel_off = None
+        TapoBinarySensorEntity.__init__(
+            self,
+            name,
+            entry,
+            hass,
+            config_entry,
+            icon=icon,
+            device_class=BinarySensorDeviceClass.MOTION,
+        )
+
+    def updateTapo(self, camData):
+        # state comes from the hub's detection list, not from camData
+        pass
+
+    @callback
+    def detected(self, detection: dict):
+        def iso(ts):
+            if ts is None:
+                return None
+            return datetime.fromtimestamp(int(ts), tz=timezone.utc).isoformat()
+
+        self._attr_extra_state_attributes = {
+            "detection_start": iso(detection["start_time"]),
+            "detection_end": iso(detection["end_time"]),
+        }
+        self._attr_is_on = True
+        self._attr_state = STATE_ON
+        if self._cancel_off:
+            self._cancel_off()
+        self._cancel_off = async_call_later(
+            self._hass, HUB_DETECTION_HOLD_SECONDS, self._turn_off
+        )
+        if self._enabled:
+            self.async_write_ha_state()
+
+    @callback
+    def _turn_off(self, _now):
+        self._cancel_off = None
+        self._attr_is_on = False
+        self._attr_state = STATE_OFF
+        if self._enabled:
+            self.async_write_ha_state()
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._cancel_off:
+            self._cancel_off()
+            self._cancel_off = None
+        await super().async_will_remove_from_hass()
 
 
 class TapoNoiseBinarySensor(TapoBinarySensorEntity):

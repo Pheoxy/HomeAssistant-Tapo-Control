@@ -171,6 +171,15 @@ You need to enable this feature in integration options by checking "Enable sound
 
 For more information and troubleshooting see [Home Assistant ffmpeg documentation](https://www.home-assistant.io/integrations/ffmpeg_noise/) on which this feature is based on.
 
+## Hub Detections
+
+For cameras and doorbells connected to a Tapo hub (such as a D230 on an H200), the integration adds Motion detected, Person detected and Package detected binary sensors. They come from the hub's detection list, the same list the Tapo app shows.
+
+- A detection shows up when its recording ends, so the sensor turns on after the detection happened (typically 10 to 30 seconds after the recording ends). It stays on for 60 seconds. Its attributes have the detection's start and end time.
+- Reading the list goes to the hub only and does not wake battery cameras.
+- Set how often the list is read in the hub's integration options, under update interval (default 30 seconds, 0 turns it off).
+- Use the doorbell press sensor for rings, as it is faster.
+
 ## Media Sync
 
 Integration is capable of synchronizing recordings for fast playback.

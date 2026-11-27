@@ -141,9 +141,13 @@
       "update_interval": {
         "data": {
           "update_interval_main": "Minimum update interval when powered from mains",
-          "update_interval_battery": "Minimum update interval when powered by solar or battery"
+          "update_interval_battery": "Minimum update interval when powered by solar or battery",
+          "hub_detection_interval": "Read detections of cameras connected to this hub every (0 = off)"
         },
-        "description": "Modify update interval of the device (in seconds)"
+        "description": "Modify update interval of the device (in seconds)",
+        "data_description": {
+          "hub_detection_interval": "Motion, person and package sensors for cameras connected to this hub, read from the hub's detection list. A detection shows up after its recording ends. Reading goes to the hub only and does not wake battery cameras."
+        }
       },
       "time_sync_options": {
         "data": {
